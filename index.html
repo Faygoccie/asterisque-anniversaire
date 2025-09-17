@@ -9,7 +9,7 @@
   <style>
     /* Минимальный стиль, ориентирован на iPhone / Safari */
     :root{--safe-top: env(safe-area-inset-top); --safe-bottom: env(safe-area-inset-bottom)}
-    html,body{height:100%;margin:0;-webkit-text-size-adjust:100%;background:#fff;font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial}
+    html,body{height:100%;margin:0;-webkit-text-size-adjust:100%; background:#001436;color:#fff;font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial}
 
     /* слой фона со звёздочками */
     .bg-layer{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
@@ -18,9 +18,9 @@
     .card{max-width:720px;width:100%}
     .message{font-size:28px;line-height:1.2;margin:0 0 20px;word-break:break-word;opacity:1;transition:opacity .35s ease;}
     @media (max-width:420px){.message{font-size:32px}}
-    button{appearance:none;border:0;padding:12px 20px;border-radius:10px;font-size:18px;background:#f2f2f2}
+    button{appearance:none;border:0;padding:12px 20px;border-radius:10px;font-size:18px;background:#f2f2f2;color:#000;cursor:pointer}
     button:active{transform:translateY(1px)}
-    button[disabled]{opacity:.5}
+    button[disabled]{opacity:.5;cursor:default}
     .fade-out{opacity:0}
 
     /* confetti canvas sits above content but doesn't catch pointer events */
@@ -37,6 +37,53 @@
       100% { transform: translateY(-160px) rotate(360deg) scale(0.7); opacity:0; }
     }
 
+    /* Модал для ввода пароля */
+    .pw-modal {
+      position:fixed;
+      inset:0;
+      background:linear-gradient(180deg, rgba(0,0,0,0.6), rgba(0,0,0,0.75));
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      z-index:50;
+      padding:20px;
+    }
+    .pw-box{
+      width:100%;
+      max-width:420px;
+      background:linear-gradient(180deg,#02102a,#001432);
+      border-radius:14px;
+      padding:20px;
+      box-shadow:0 10px 30px rgba(0,0,0,0.6);
+      text-align:center;
+      color:#fff;
+    }
+    .pw-box h3{margin:0 0 10px;font-size:20px}
+    .pw-input{
+      width:100%;
+      padding:12px 14px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,0.08);
+      background:rgba(255,255,255,0.03);
+      color:#fff;
+      font-size:16px;
+      margin-bottom:12px;
+      box-sizing:border-box;
+    }
+    .pw-actions{display:flex;gap:10px;justify-content:center}
+    .pw-hint{font-size:13px;color:rgba(255,255,255,0.65);margin-top:10px}
+
+    /* анимация ошибки */
+    @keyframes shake {
+      0% { transform: translateX(0) }
+      20% { transform: translateX(-8px) }
+      40% { transform: translateX(8px) }
+      60% { transform: translateX(-6px) }
+      80% { transform: translateX(6px) }
+      100% { transform: translateX(0) }
+    }
+    .shake { animation: shake .5s ease; }
+
   </style>
 </head>
 <body>
@@ -46,14 +93,29 @@
   <div class="wrap">
     <div class="card">
       <p id="msg" class="message">Привет, Звёздочка!!</p>
-      <div style="display:flex;justify-content:center">
-        <button id="nextBtn" aria-label="Далее">Далее</button>
+      <div style="display:flex;justify-content:center;gap:12px">
+        <button id="nextBtn" aria-label="Далее" disabled>Далее</button>
+        <button id="confettiBtn" style="display:none">Повторить конфетти</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Модал ввода пароля -->
+  <div id="pwModal" class="pw-modal" aria-hidden="false" role="dialog" aria-label="Требуется пароль">
+    <div class="pw-box" role="document">
+      <h3>Введите пароль, чтобы продолжить</h3>
+      <input id="pwInput" class="pw-input" type="password" placeholder="Пароль" aria-label="Пароль" />
+      <div class="pw-actions">
+        <button id="pwOkBtn">Войти</button>
+        <button id="pwCancelBtn">Отмена</button>
+      </div>
+      <div class="pw-hint">Если у вас есть пароль — введите его. Подсказка: обратитесь к отправителю.</div>
     </div>
   </div>
 
   <script>
     (function(){
+      const CORRECT = 'evawithoutadam'; // правильный пароль (как вы просили)
       const messages = [
         "Привет, Звёздочка!!",
         "Мрррмяу я люблю тебя",
@@ -85,8 +147,94 @@
       const msgEl = document.getElementById('msg');
       const btn = document.getElementById('nextBtn');
       const bgLayer = document.getElementById('bgLayer');
-      let finaleTriggered = false;
+      const confettiBtn = document.getElementById('confettiBtn');
 
+      let finaleTriggered = false;
+      let audioContext;
+
+      // --- Password modal elements ---
+      const pwModal = document.getElementById('pwModal');
+      const pwInput = document.getElementById('pwInput');
+      const pwOkBtn = document.getElementById('pwOkBtn');
+      const pwCancelBtn = document.getElementById('pwCancelBtn');
+
+      // Проверим, был ли уже введён пароль в этой сессии
+      const unlocked = sessionStorage.getItem('unlocked') === '1';
+      if (unlocked) {
+        hideModal();
+        enableControls();
+      } else {
+        showModal();
+        disableControls();
+      }
+
+      function showModal(){
+        pwModal.style.display = 'flex';
+        pwModal.setAttribute('aria-hidden','false');
+        // помещаем фокус в input
+        setTimeout(()=> pwInput.focus(), 120);
+      }
+      function hideModal(){
+        pwModal.style.display = 'none';
+        pwModal.setAttribute('aria-hidden','true');
+      }
+      function disableControls(){
+        btn.disabled = true;
+        // предотвращаем переход по клику на сообщение
+        msgEl.style.cursor = 'default';
+      }
+      function enableControls(){
+        btn.disabled = false;
+        msgEl.style.cursor = 'pointer';
+      }
+
+      function checkPassword(value){
+        try {
+          // простой строгий сопоставитель
+          return value === CORRECT;
+        } catch (e) {
+          return false;
+        }
+      }
+
+      pwOkBtn.addEventListener('click', ()=>{
+        const val = pwInput.value || '';
+        if (checkPassword(val)) {
+          sessionStorage.setItem('unlocked','1');
+          hideModal();
+          enableControls();
+        } else {
+          // короткая визуальная ошибка
+          pwInput.classList.remove('shake');
+          // force reflow to restart animation
+          void pwInput.offsetWidth;
+          pwInput.classList.add('shake');
+          pwInput.value = '';
+          pwInput.focus();
+        }
+      });
+
+      // Allow Enter key to submit
+      pwInput.addEventListener('keydown', (e)=>{
+        if (e.key === 'Enter') {
+          pwOkBtn.click();
+        }
+      });
+
+      // Cancel hides modal but keeps locked (user can reopen by refresh)
+      pwCancelBtn.addEventListener('click', ()=>{
+        // просто скрываем модал, но не даём продвигаться дальше
+        hideModal();
+        // оставляем интерфейс заблокированным; покажем краткое сообщение
+        msgEl.textContent = "Чтобы начать — нужно ввести пароль.";
+        disableControls();
+        // потом снова показать модал, если пользователь кликнет по сообщению
+        msgEl.addEventListener('click', showModalOnce, { once: true });
+      });
+
+      function showModalOnce(){ showModal(); }
+
+      // --- Существующая логика показа сообщений (малые правки: учитываем блокировку) ---
       function show(index){
         msgEl.classList.add('fade-out');
         setTimeout(()=>{
@@ -96,15 +244,15 @@
           // добавляем одну звёздочку на каждый показ сообщения
           addStarForIndex(index);
 
-          // если это последнее сообщение — запускаем звук и конфетти один раз
-          if(index >= messages.length - 1 && !finaleTriggered){
-            finaleTriggered = true;
-            setTimeout(()=>{
-              playHorn();
-              launchConfetti();
-            }, 220);
+          // Запускаем звук и конфетти, если это последнее сообщение
+          if(index >= messages.length - 1){
+              if (!finaleTriggered) {
+                finaleTriggered = true;
+                playHorn();
+                launchConfetti();
+              }
+              confettiBtn.style.display = 'inline-block';
           }
-
         }, 220);
 
         // если последний — отключаем кнопку
@@ -118,17 +266,33 @@
       }
 
       btn.addEventListener('click', ()=>{
-        if(idx < messages.length - 1){
-          idx++;
-          show(idx);
-        } else {
-          idx = messages.length - 1;
-          show(idx);
-        }
+          // Дополнительная защита: если ещё не разблокировано — откроем модал
+          if (sessionStorage.getItem('unlocked') !== '1') {
+            showModal();
+            return;
+          }
+
+          if (!audioContext) { // Инициализируем audioContext при первом клике
+              const AudioContext = window.AudioContext || window.webkitAudioContext;
+              audioContext = new AudioContext();
+          }
+
+          if(idx < messages.length - 1){
+              idx++;
+              show(idx);
+          } else {
+              idx = messages.length - 1;
+              show(idx);
+          }
       });
 
       msgEl.addEventListener('click', ()=>{
-        btn.click();
+        // клик по сообщению должен работать как клик по кнопке, но только если разблокировано
+        if (sessionStorage.getItem('unlocked') === '1') {
+          btn.click();
+        } else {
+          showModal();
+        }
       });
 
       // Показываем первый элемент корректно
@@ -136,56 +300,37 @@
 
       // --- Добавление звёздочки (SVG) ---
       function addStarForIndex(i){
-        // создаём одну звезду; для уникальности можно привязать к индексу
         const star = createStarShape();
-        // случайная позиция — немного вверху или по центру
-        const padding = 0.06; // 6% от ширины
-        const left = Math.random() * (1 - padding*2) + padding; // 0..1
-        const top = 0.2 + Math.random() * 0.55; // между 20% и 75% высоты
-
-        // рандом размер
+        const padding = 0.06;
+        const left = Math.random() * (1 - padding*2) + padding;
+        const top = 0.2 + Math.random() * 0.55;
         const baseSize = Math.max(18, Math.min(62, Math.round(window.innerWidth * (0.06 + Math.random()*0.07))));
         star.style.left = Math.round(left * 100) + '%';
         star.style.top = Math.round(top * 100) + '%';
         star.style.width = baseSize + 'px';
         star.style.height = baseSize + 'px';
-
-        // рандом длительность анимации в секундах
         const dur = (6 + Math.random() * 4).toFixed(2) + 's';
         star.style.animation = `floatStar ${dur} cubic-bezier(.2,.8,.2,1)`;
-
         bgLayer.appendChild(star);
-
-        // удаляем элемент по завершении анимации
         star.addEventListener('animationend', ()=>{
           if(star && star.parentNode) star.parentNode.removeChild(star);
         }, {once:true});
       }
 
       function createStarShape(){
-        // SVG пятиконечной звезды — path
         const svgNS = 'http://www.w3.org/2000/svg';
         const svg = document.createElementNS(svgNS, 'svg');
         svg.setAttribute('viewBox','0 0 100 100');
         svg.setAttribute('class','star-svg');
         svg.setAttribute('aria-hidden','true');
-
         const path = document.createElementNS(svgNS, 'path');
-        // Путь звезды (центр в 50,50)
         path.setAttribute('d', 'M50 3 L61.8 35.3 L95.1 35.3 L68.6 54.7 L79.9 87.0 L50 67.5 L20.1 87.0 L31.4 54.7 L4.9 35.3 L38.2 35.3 Z');
-
-        // случайный цвет мягкий
         const palette = ['#FFF26A','#FFD36E','#FF9CCF','#B6E9FF','#FFD7A1','#E6FFB3','#FFC6F9'];
         path.setAttribute('fill', palette[Math.floor(Math.random()*palette.length)]);
         path.setAttribute('fill-opacity', '0.95');
-
-        // лёгкий контур
         path.setAttribute('stroke','rgba(0,0,0,0.06)');
         path.setAttribute('stroke-width','1');
-
         svg.appendChild(path);
-
-        // возвращаем HTML элемент (не SVG namespace wrapper) для удобной позиционировки
         const wrapper = document.createElement('div');
         wrapper.style.position = 'absolute';
         wrapper.style.pointerEvents = 'none';
@@ -193,12 +338,9 @@
         wrapper.style.willChange = 'transform, opacity';
         wrapper.className = 'star-wrapper';
         wrapper.appendChild(svg);
-
-        // внутренняя стилизация для svg внутри wrapper
         svg.style.width = '100%';
         svg.style.height = '100%';
         svg.style.display = 'block';
-
         return wrapper;
       }
 
@@ -206,50 +348,37 @@
       function playHorn(){
         try{
           const AudioContext = window.AudioContext || window.webkitAudioContext;
-          const ac = new AudioContext();
+          if (typeof AudioContext === 'undefined') {
+              console.warn('Web Audio API is not supported in this browser.');
+              return;
+          }
+          const ac = audioContext;
           const now = ac.currentTime;
-
-          // Основной осциллятор — более длинный скользящий тон (дудка)
           const osc1 = ac.createOscillator();
           osc1.type = 'sawtooth';
           osc1.frequency.setValueAtTime(1200, now);
-          // более медленный спад частоты — 1.6 секунды
           osc1.frequency.exponentialRampToValueAtTime(220, now + 1.6);
-
-          // Второй осциллятор для заполнения (мягкий тон)
           const osc2 = ac.createOscillator();
           osc2.type = 'sine';
           osc2.frequency.setValueAtTime(440, now);
-          // немного вибрато/модуляция через detune изменения
           osc2.detune.setValueAtTime(0, now);
-
-          // Общий выход через gain, с долгим затуханием
           const gain = ac.createGain();
           gain.gain.setValueAtTime(0.0001, now);
-          // быстрый аттак
           gain.gain.exponentialRampToValueAtTime(0.8, now + 0.04);
-          // короткое поддержание громкости
           gain.gain.setValueAtTime(0.8, now + 0.18);
-          // затем плавное затухание до почти нуля за ~2.4 секунды
           gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.6);
-
-          // подключаем осцилляторы
           const mix = ac.createGain();
           const osc2Gain = ac.createGain();
           osc2Gain.gain.setValueAtTime(0.35, now);
-
           osc1.connect(mix);
           osc2.connect(osc2Gain);
           osc2Gain.connect(mix);
           mix.connect(gain);
           gain.connect(ac.destination);
-
           osc1.start(now);
           osc2.start(now);
-          // выключаем немного после падения
           osc1.stop(now + 2.7);
           osc2.stop(now + 2.7);
-
         }catch(e){
           console.warn('Audio failed:', e);
         }
@@ -257,33 +386,30 @@
 
       // --- Конфетти на canvas ---
       function launchConfetti(){
-        // уважение к настройкам пользователя
         if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
         const canvas = document.createElement('canvas');
+        if (!canvas.getContext) {
+              console.warn('Canvas API is not supported in this browser.');
+              return;
+        }
         canvas.className = 'confetti-canvas';
         canvas.style.width = '100%';
         canvas.style.height = '100%';
         document.body.appendChild(canvas);
-
         const ctx = canvas.getContext('2d');
         let w = canvas.width = innerWidth * devicePixelRatio;
         let h = canvas.height = innerHeight * devicePixelRatio;
         canvas.style.width = innerWidth + 'px';
         canvas.style.height = innerHeight + 'px';
         ctx.scale(devicePixelRatio, devicePixelRatio);
-
         const colors = ['#ff4d6d','#ffb86b','#ffd166','#8ce99a','#66c2ff','#c084fc','#ff63b6'];
         const particles = [];
         const count = Math.floor(Math.max(24, innerWidth / 15));
-
         for(let i=0;i<count;i++){
           particles.push(createParticle());
         }
-
         let rafId;
         const gravity = 0.25;
-
         function createParticle(){
           const size = rand(6, 14);
           return {
@@ -295,15 +421,12 @@
             rot: rand(0,360),
             vr: rand(-8,8),
             color: colors[Math.floor(Math.random()*colors.length)],
-            ttl: rand(180, 320) // frames to live
+            ttl: rand(180, 320)
           };
         }
-
         function rand(min,max){ return Math.random()*(max-min)+min }
-
         function draw(){
           ctx.clearRect(0,0,innerWidth,innerHeight);
-
           for(let i=particles.length-1;i>=0;i--){
             const p = particles[i];
             p.vy += gravity * 0.6;
@@ -311,37 +434,24 @@
             p.y += p.vy;
             p.rot += p.vr;
             p.ttl--;
-
             ctx.save();
             ctx.translate(p.x, p.y);
             ctx.rotate(p.rot * Math.PI / 180);
-
             ctx.fillStyle = p.color;
-            // рисуем маленький прямоугольник (конфетти)
             ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size * 0.6);
             ctx.restore();
-
-            // recycle if out of bounds or time ended
             if(p.y > innerHeight + 50 || p.x < -50 || p.x > innerWidth + 50 || p.ttl <= 0){
-              // плавно уходим
               particles.splice(i,1);
             }
           }
-
           if(particles.length === 0){
             cancelAnimationFrame(rafId);
-            // оставим канвас ещё на немного, затем удалим
             setTimeout(()=>{ if(canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas); }, 500);
             return;
           }
-
           rafId = requestAnimationFrame(draw);
         }
-
-        // start
         draw();
-
-        // при ресайзе обновляем canvas
         function onResize(){
           w = canvas.width = innerWidth * devicePixelRatio;
           h = canvas.height = innerHeight * devicePixelRatio;
@@ -350,10 +460,18 @@
           ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
         }
         window.addEventListener('resize', onResize);
-
-        // safety: если пользователь долго не видит анимацию — в любом случае остановим через 10s
+        window.addEventListener('orientationchange', onResize);
         setTimeout(()=>{ particles.length = 0; }, 10000);
       }
+
+      confettiBtn.addEventListener('click', ()=>{
+        launchConfetti();
+        if (!audioContext) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          audioContext = new AudioContext();
+        }
+        playHorn();
+      });
 
     })();
   </script>
